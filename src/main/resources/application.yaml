@@ -1,3 +1,14 @@
 spring:
   application:
     name: order-processing-system
+  datasource:
+    url: jdbc:postgresql://localhost:5433/orders_db
+    username: orders_user
+    password: orders_password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
