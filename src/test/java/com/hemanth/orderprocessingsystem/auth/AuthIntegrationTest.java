@@ -1,5 +1,7 @@
 package com.hemanth.orderprocessingsystem.auth;
 
+import com.hemanth.orderprocessingsystem.history.OrderStatusHistoryRepository;
+import com.hemanth.orderprocessingsystem.order.OrderRepository;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
 import com.hemanth.orderprocessingsystem.user.UserRole;
@@ -54,6 +56,12 @@ class AuthIntegrationTest {
 
     @MockBean
     private UserRepository userRepository;
+
+    @MockBean
+    private OrderRepository orderRepository;
+
+    @MockBean
+    private OrderStatusHistoryRepository orderStatusHistoryRepository;
 
     @Test
     void customer1CanLogin() throws Exception {
