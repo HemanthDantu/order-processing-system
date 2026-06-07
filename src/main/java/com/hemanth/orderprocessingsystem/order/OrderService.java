@@ -6,8 +6,14 @@ import com.hemanth.orderprocessingsystem.history.OrderStatusHistoryService;
 import com.hemanth.orderprocessingsystem.order.dto.CreateOrderItemRequest;
 import com.hemanth.orderprocessingsystem.order.dto.CreateOrderRequest;
 import com.hemanth.orderprocessingsystem.order.dto.OrderResponse;
+import com.hemanth.orderprocessingsystem.order.dto.OrderSummaryResponse;
+import com.hemanth.orderprocessingsystem.order.dto.PageResponse;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
+import com.hemanth.orderprocessingsystem.user.UserRole;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +28,8 @@ import java.util.UUID;
  */
 @Service
 public class OrderService {
+
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
@@ -83,5 +91,53 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         historyService.recordOrderCreated(savedOrder, customer, ActorType.valueOf(principal.role().name()), now);
         return orderMapper.toResponse(savedOrder);
+    }
+
+    /**
+     * Retrieves an order detail response with customer ownership enforcement.
+     *
+     * <p>Admins can view any order. Customers can only view orders where the
+     * persisted {@code customer_id} matches their JWT principal.</p>
+     */
+    @Transactional(readOnly = true)
+    public OrderResponse getOrder(UUID orderId, JwtPrincipal principal) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+
+        if (principal.role() != UserRole.ADMIN && !order.getCustomer().getId().equals(principal.userId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to this order");
+        }
+
+        return orderMapper.toResponse(order);
+    }
+
+    /**
+     * Lists orders for admins with optional status filtering and bounded pagination.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<OrderSummaryResponse> listOrders(
+            OrderStatus status,
+            int page,
+            int size,
+            JwtPrincipal principal
+    ) {
+        if (principal.role() != UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins can list orders");
+        }
+
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE));
+        Page<Order> orders = status == null
+                ? orderRepository.findAll(pageable)
+                : orderRepository.findByStatus(status, pageable);
+
+        return new PageResponse<>(
+                orders.getContent().stream().map(orderMapper::toSummaryResponse).toList(),
+                orders.getNumber(),
+                orders.getSize(),
+                orders.getTotalElements(),
+                orders.getTotalPages(),
+                orders.isFirst(),
+                orders.isLast()
+        );
     }
 }
