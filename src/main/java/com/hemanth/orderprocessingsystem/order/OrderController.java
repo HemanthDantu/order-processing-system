@@ -80,4 +80,15 @@ public class OrderController {
     ) {
         return ResponseEntity.ok(orderService.updateStatus(orderId, request, principal));
     }
+
+    /**
+     * Cancels an order when the caller owns it or is an admin.
+     */
+    @PostMapping("/{orderId}/cancel")
+    public ResponseEntity<OrderResponse> cancelOrder(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID orderId
+    ) {
+        return ResponseEntity.ok(orderService.cancelOrder(orderId, principal));
+    }
 }

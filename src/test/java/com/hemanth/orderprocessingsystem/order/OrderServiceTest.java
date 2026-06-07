@@ -1,6 +1,7 @@
 package com.hemanth.orderprocessingsystem.order;
 
 import com.hemanth.orderprocessingsystem.auth.JwtPrincipal;
+import com.hemanth.orderprocessingsystem.exception.InvalidOrderStateException;
 import com.hemanth.orderprocessingsystem.history.ActorType;
 import com.hemanth.orderprocessingsystem.history.OrderStatusHistoryService;
 import com.hemanth.orderprocessingsystem.order.dto.CreateOrderItemRequest;
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 /**
@@ -228,6 +230,110 @@ class OrderServiceTest {
                 .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
+    @Test
+    void cancelOrderAllowsCustomerToCancelOwnPendingOrderAndWritesHistory() {
+        OrderService service = newOrderService();
+        User customer = customerUser();
+        Order order = sampleOrder(customer);
+        when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer));
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = service.cancelOrder(ORDER_ID, customerPrincipal());
+
+        assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(order.getUpdatedAt()).isAfter(Instant.parse("2026-01-01T00:05:00Z"));
+        verify(historyService).recordStatusChange(
+                order,
+                OrderStatus.PENDING,
+                OrderStatus.CANCELLED,
+                customer,
+                ActorType.CUSTOMER,
+                order.getUpdatedAt(),
+                "Order cancelled"
+        );
+    }
+
+    @Test
+    void cancelOrderRejectsProcessingOrder() {
+        OrderService service = newOrderService();
+        User customer = customerUser();
+        Order order = sampleOrderWithStatus(customer, OrderStatus.PROCESSING);
+        when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer));
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> service.cancelOrder(ORDER_ID, customerPrincipal()))
+                .isInstanceOf(InvalidOrderStateException.class);
+    }
+
+    @Test
+    void cancelOrderReturnsAlreadyCancelledOrderIdempotently() {
+        OrderService service = newOrderService();
+        User customer = customerUser();
+        Order order = sampleOrderWithStatus(customer, OrderStatus.CANCELLED);
+        when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer));
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+
+        OrderResponse response = service.cancelOrder(ORDER_ID, customerPrincipal());
+
+        assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(historyService, never()).recordStatusChange(
+                any(Order.class),
+                any(OrderStatus.class),
+                any(OrderStatus.class),
+                any(User.class),
+                any(ActorType.class),
+                any(Instant.class),
+                any(String.class)
+        );
+    }
+
+    @Test
+    void cancelOrderRejectsCustomerCancellingAnotherCustomersOrder() {
+        OrderService service = newOrderService();
+        User customer = customerUser();
+        User otherCustomer = new User(
+                OTHER_CUSTOMER_ID,
+                "other-customer",
+                "password-hash",
+                UserRole.CUSTOMER,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:00Z")
+        );
+        Order order = sampleOrder(otherCustomer);
+        when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customer));
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> service.cancelOrder(ORDER_ID, customerPrincipal()))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(error -> ((ResponseStatusException) error).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void cancelOrderAllowsAdminToCancelAnyPendingOrder() {
+        OrderService service = newOrderService();
+        User admin = adminUser();
+        Order order = sampleOrder(customerUser());
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(admin));
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = service.cancelOrder(ORDER_ID, adminPrincipal());
+
+        assertThat(response.status()).isEqualTo(OrderStatus.CANCELLED);
+        verify(historyService).recordStatusChange(
+                order,
+                OrderStatus.PENDING,
+                OrderStatus.CANCELLED,
+                admin,
+                ActorType.ADMIN,
+                order.getUpdatedAt(),
+                "Order cancelled"
+        );
+    }
+
     private User customerUser() {
         return new User(
                 CUSTOMER_ID,
@@ -280,6 +386,12 @@ class OrderServiceTest {
                 new BigDecimal("25.00"),
                 new BigDecimal("25.00")
         ));
+        return order;
+    }
+
+    private Order sampleOrderWithStatus(User customer, OrderStatus status) {
+        Order order = sampleOrder(customer);
+        order.setStatus(status);
         return order;
     }
 }

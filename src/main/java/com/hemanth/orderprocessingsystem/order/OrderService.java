@@ -182,4 +182,48 @@ public class OrderService {
 
         return orderMapper.toResponse(savedOrder);
     }
+
+    /**
+     * Cancels an order when the caller is allowed to act on it and the order is
+     * still in the cancellable part of the lifecycle.
+     *
+     * <p>Cancellation is idempotent for already-cancelled orders: a repeated
+     * request returns the current cancelled order without writing another audit
+     * record. This makes client retries safe while preserving a clean history.</p>
+     */
+    @Transactional
+    public OrderResponse cancelOrder(UUID orderId, JwtPrincipal principal) {
+        User actor = userRepository.findById(principal.userId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user no longer exists"));
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+
+        if (principal.role() != UserRole.ADMIN && !order.getCustomer().getId().equals(principal.userId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to cancel this order");
+        }
+
+        OrderStatus previousStatus = order.getStatus();
+        if (previousStatus == OrderStatus.CANCELLED) {
+            return orderMapper.toResponse(order);
+        }
+
+        transitionValidator.validate(previousStatus, OrderStatus.CANCELLED);
+
+        Instant now = Instant.now();
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setUpdatedAt(now);
+
+        Order savedOrder = orderRepository.save(order);
+        historyService.recordStatusChange(
+                savedOrder,
+                previousStatus,
+                OrderStatus.CANCELLED,
+                actor,
+                ActorType.valueOf(principal.role().name()),
+                now,
+                "Order cancelled"
+        );
+
+        return orderMapper.toResponse(savedOrder);
+    }
 }
