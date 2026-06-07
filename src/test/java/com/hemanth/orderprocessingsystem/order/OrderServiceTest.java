@@ -8,6 +8,7 @@ import com.hemanth.orderprocessingsystem.order.dto.CreateOrderRequest;
 import com.hemanth.orderprocessingsystem.order.dto.OrderResponse;
 import com.hemanth.orderprocessingsystem.order.dto.OrderSummaryResponse;
 import com.hemanth.orderprocessingsystem.order.dto.PageResponse;
+import com.hemanth.orderprocessingsystem.order.dto.UpdateOrderStatusRequest;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
 import com.hemanth.orderprocessingsystem.user.UserRole;
@@ -55,10 +56,11 @@ class OrderServiceTest {
     private OrderStatusHistoryService historyService;
 
     private final OrderMapper orderMapper = new OrderMapper();
+    private final OrderStatusTransitionValidator transitionValidator = new OrderStatusTransitionValidator();
 
     @Test
     void createOrderCalculatesTotalsAndWritesHistory() {
-        OrderService service = new OrderService(orderRepository, userRepository, historyService, orderMapper);
+        OrderService service = newOrderService();
         User customer = customerUser();
         JwtPrincipal principal = new JwtPrincipal(CUSTOMER_ID, "customer1", UserRole.CUSTOMER);
         CreateOrderRequest request = new CreateOrderRequest(List.of(
@@ -87,7 +89,7 @@ class OrderServiceTest {
 
     @Test
     void getOrderAllowsCustomerToRetrieveOwnOrder() {
-        OrderService service = new OrderService(orderRepository, userRepository, historyService, orderMapper);
+        OrderService service = newOrderService();
         Order order = sampleOrder(customerUser());
         when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
 
@@ -100,7 +102,7 @@ class OrderServiceTest {
 
     @Test
     void getOrderRejectsCustomerAccessToAnotherCustomersOrder() {
-        OrderService service = new OrderService(orderRepository, userRepository, historyService, orderMapper);
+        OrderService service = newOrderService();
         Order order = sampleOrder(new User(
                 OTHER_CUSTOMER_ID,
                 "other-customer",
@@ -119,7 +121,7 @@ class OrderServiceTest {
 
     @Test
     void getOrderAllowsAdminToRetrieveAnyOrder() {
-        OrderService service = new OrderService(orderRepository, userRepository, historyService, orderMapper);
+        OrderService service = newOrderService();
         Order order = sampleOrder(customerUser());
         when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
 
@@ -130,7 +132,7 @@ class OrderServiceTest {
 
     @Test
     void listOrdersRejectsCustomer() {
-        OrderService service = new OrderService(orderRepository, userRepository, historyService, orderMapper);
+        OrderService service = newOrderService();
 
         assertThatThrownBy(() -> service.listOrders(null, 0, 20, customerPrincipal()))
                 .isInstanceOf(ResponseStatusException.class)
@@ -140,7 +142,7 @@ class OrderServiceTest {
 
     @Test
     void listOrdersReturnsCleanPaginatedAdminResponse() {
-        OrderService service = new OrderService(orderRepository, userRepository, historyService, orderMapper);
+        OrderService service = newOrderService();
         Order order = sampleOrder(customerUser());
         when(orderRepository.findAll(PageRequest.of(0, 20))).thenReturn(new PageImpl<>(List.of(order), PageRequest.of(0, 20), 1));
 
@@ -157,7 +159,7 @@ class OrderServiceTest {
 
     @Test
     void listOrdersSupportsStatusFilterAndCapsPageSize() {
-        OrderService service = new OrderService(orderRepository, userRepository, historyService, orderMapper);
+        OrderService service = newOrderService();
         Order order = sampleOrder(customerUser());
         when(orderRepository.findByStatus(eq(OrderStatus.PENDING), eq(PageRequest.of(0, 100))))
                 .thenReturn(new PageImpl<>(List.of(order), PageRequest.of(0, 100), 1));
@@ -167,6 +169,63 @@ class OrderServiceTest {
         assertThat(response.content()).hasSize(1);
         assertThat(response.size()).isEqualTo(100);
         verify(orderRepository).findByStatus(OrderStatus.PENDING, PageRequest.of(0, 100));
+    }
+
+    @Test
+    void updateStatusAllowsAdminValidTransitionAndWritesHistory() {
+        OrderService service = newOrderService();
+        User admin = adminUser();
+        Order order = sampleOrder(customerUser());
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(admin));
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = service.updateStatus(
+                ORDER_ID,
+                new UpdateOrderStatusRequest(OrderStatus.PROCESSING, "Start processing"),
+                adminPrincipal()
+        );
+
+        assertThat(response.status()).isEqualTo(OrderStatus.PROCESSING);
+        assertThat(order.getUpdatedAt()).isAfter(Instant.parse("2026-01-01T00:05:00Z"));
+        verify(historyService).recordStatusChange(
+                order,
+                OrderStatus.PENDING,
+                OrderStatus.PROCESSING,
+                admin,
+                ActorType.ADMIN,
+                order.getUpdatedAt(),
+                "Start processing"
+        );
+    }
+
+    @Test
+    void updateStatusRejectsInvalidTransition() {
+        OrderService service = newOrderService();
+        User admin = adminUser();
+        Order order = sampleOrder(customerUser());
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(admin));
+        when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> service.updateStatus(
+                ORDER_ID,
+                new UpdateOrderStatusRequest(OrderStatus.SHIPPED, "Skip processing"),
+                adminPrincipal()
+        )).isInstanceOf(com.hemanth.orderprocessingsystem.exception.InvalidOrderStateException.class);
+    }
+
+    @Test
+    void updateStatusRejectsCustomer() {
+        OrderService service = newOrderService();
+
+        assertThatThrownBy(() -> service.updateStatus(
+                ORDER_ID,
+                new UpdateOrderStatusRequest(OrderStatus.PROCESSING, "Start processing"),
+                customerPrincipal()
+        ))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(error -> ((ResponseStatusException) error).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     private User customerUser() {
@@ -186,6 +245,21 @@ class OrderServiceTest {
 
     private JwtPrincipal adminPrincipal() {
         return new JwtPrincipal(ADMIN_ID, "admin1", UserRole.ADMIN);
+    }
+
+    private User adminUser() {
+        return new User(
+                ADMIN_ID,
+                "admin1",
+                "password-hash",
+                UserRole.ADMIN,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:00Z")
+        );
+    }
+
+    private OrderService newOrderService() {
+        return new OrderService(orderRepository, userRepository, historyService, orderMapper, transitionValidator);
     }
 
     private Order sampleOrder(User customer) {

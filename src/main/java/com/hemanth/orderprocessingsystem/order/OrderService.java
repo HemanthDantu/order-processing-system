@@ -8,6 +8,7 @@ import com.hemanth.orderprocessingsystem.order.dto.CreateOrderRequest;
 import com.hemanth.orderprocessingsystem.order.dto.OrderResponse;
 import com.hemanth.orderprocessingsystem.order.dto.OrderSummaryResponse;
 import com.hemanth.orderprocessingsystem.order.dto.PageResponse;
+import com.hemanth.orderprocessingsystem.order.dto.UpdateOrderStatusRequest;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
 import com.hemanth.orderprocessingsystem.user.UserRole;
@@ -35,17 +36,20 @@ public class OrderService {
     private final UserRepository userRepository;
     private final OrderStatusHistoryService historyService;
     private final OrderMapper orderMapper;
+    private final OrderStatusTransitionValidator transitionValidator;
 
     public OrderService(
             OrderRepository orderRepository,
             UserRepository userRepository,
             OrderStatusHistoryService historyService,
-            OrderMapper orderMapper
+            OrderMapper orderMapper,
+            OrderStatusTransitionValidator transitionValidator
     ) {
         this.orderRepository = orderRepository;
         this.userRepository = userRepository;
         this.historyService = historyService;
         this.orderMapper = orderMapper;
+        this.transitionValidator = transitionValidator;
     }
 
     /**
@@ -139,5 +143,43 @@ public class OrderService {
                 orders.isFirst(),
                 orders.isLast()
         );
+    }
+
+    /**
+     * Applies an admin-requested status transition and writes an audit row.
+     *
+     * <p>The lifecycle rule check stays in {@link OrderStatusTransitionValidator}
+     * so status rules remain centralized and easy to test.</p>
+     */
+    @Transactional
+    public OrderResponse updateStatus(UUID orderId, UpdateOrderStatusRequest request, JwtPrincipal principal) {
+        if (principal.role() != UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins can update order status");
+        }
+
+        User admin = userRepository.findById(principal.userId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authenticated user no longer exists"));
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+
+        OrderStatus previousStatus = order.getStatus();
+        transitionValidator.validate(previousStatus, request.status());
+
+        Instant now = Instant.now();
+        order.setStatus(request.status());
+        order.setUpdatedAt(now);
+
+        Order savedOrder = orderRepository.save(order);
+        historyService.recordStatusChange(
+                savedOrder,
+                previousStatus,
+                request.status(),
+                admin,
+                ActorType.ADMIN,
+                now,
+                request.reason()
+        );
+
+        return orderMapper.toResponse(savedOrder);
     }
 }

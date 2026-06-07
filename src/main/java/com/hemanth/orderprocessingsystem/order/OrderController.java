@@ -5,11 +5,13 @@ import com.hemanth.orderprocessingsystem.order.dto.CreateOrderRequest;
 import com.hemanth.orderprocessingsystem.order.dto.OrderResponse;
 import com.hemanth.orderprocessingsystem.order.dto.OrderSummaryResponse;
 import com.hemanth.orderprocessingsystem.order.dto.PageResponse;
+import com.hemanth.orderprocessingsystem.order.dto.UpdateOrderStatusRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -65,5 +67,17 @@ public class OrderController {
             @RequestParam(required = false) OrderStatus status
     ) {
         return ResponseEntity.ok(orderService.listOrders(status, page, size, principal));
+    }
+
+    /**
+     * Updates an order status through an admin-only lifecycle transition.
+     */
+    @PatchMapping("/{orderId}/status")
+    public ResponseEntity<OrderResponse> updateStatus(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID orderId,
+            @Valid @RequestBody UpdateOrderStatusRequest request
+    ) {
+        return ResponseEntity.ok(orderService.updateStatus(orderId, request, principal));
     }
 }

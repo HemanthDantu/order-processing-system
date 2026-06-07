@@ -24,15 +24,30 @@ public class OrderStatusHistoryService {
      * Records the initial PENDING status when an order is created.
      */
     public void recordOrderCreated(Order order, User actor, ActorType actorType, Instant changedAt) {
+        recordStatusChange(order, null, OrderStatus.PENDING, actor, actorType, changedAt, "Order created");
+    }
+
+    /**
+     * Records a status transition for an existing order.
+     */
+    public void recordStatusChange(
+            Order order,
+            OrderStatus fromStatus,
+            OrderStatus toStatus,
+            User actor,
+            ActorType actorType,
+            Instant changedAt,
+            String reason
+    ) {
         OrderStatusHistory history = new OrderStatusHistory(
                 UUID.randomUUID(),
                 order,
-                null,
-                OrderStatus.PENDING,
+                fromStatus,
+                toStatus,
                 actor,
                 actorType,
                 changedAt,
-                "Order created"
+                reason
         );
         repository.save(history);
     }

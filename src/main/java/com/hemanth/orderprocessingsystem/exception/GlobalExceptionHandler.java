@@ -3,6 +3,7 @@ package com.hemanth.orderprocessingsystem.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -49,6 +50,33 @@ public class GlobalExceptionHandler {
     ) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
         return buildResponse(status, exception.getReason(), request.getRequestURI(), List.of());
+    }
+
+    /**
+     * Returns a 400 response when a requested order status transition is invalid.
+     */
+    @ExceptionHandler(InvalidOrderStateException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidOrderStateException(
+            InvalidOrderStateException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), request.getRequestURI(), List.of());
+    }
+
+    /**
+     * Returns a 409 response when optimistic locking detects a concurrent update.
+     */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiErrorResponse> handleOptimisticLockingFailure(
+            ObjectOptimisticLockingFailureException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.CONFLICT,
+                "Order was updated by another request. Please retry with the latest state.",
+                request.getRequestURI(),
+                List.of()
+        );
     }
 
     private ResponseEntity<ApiErrorResponse> buildResponse(
