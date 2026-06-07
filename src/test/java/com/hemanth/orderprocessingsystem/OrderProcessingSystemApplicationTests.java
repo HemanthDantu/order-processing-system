@@ -7,7 +7,7 @@ import com.hemanth.orderprocessingsystem.processing.OrderProcessingRepository;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @SpringBootTest(properties = {
@@ -19,22 +19,22 @@ import org.springframework.transaction.PlatformTransactionManager;
 })
 class OrderProcessingSystemApplicationTests {
 
-    @MockBean
+    @MockitoBean
     private UserRepository userRepository;
 
-    @MockBean
+    @MockitoBean
     private OrderRepository orderRepository;
 
-    @MockBean
+    @MockitoBean
     private OrderStatusHistoryRepository orderStatusHistoryRepository;
 
-    @MockBean
+    @MockitoBean
     private IdempotencyRepository idempotencyRepository;
 
-    @MockBean
+    @MockitoBean
     private PlatformTransactionManager platformTransactionManager;
 
-    @MockBean
+    @MockitoBean
     private OrderProcessingRepository orderProcessingRepository;
 
     @Test
