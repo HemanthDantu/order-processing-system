@@ -3,6 +3,7 @@ package com.hemanth.orderprocessingsystem.auth;
 import com.hemanth.orderprocessingsystem.history.OrderStatusHistoryRepository;
 import com.hemanth.orderprocessingsystem.idempotency.IdempotencyRepository;
 import com.hemanth.orderprocessingsystem.order.OrderRepository;
+import com.hemanth.orderprocessingsystem.processing.OrderProcessingRepository;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
 import com.hemanth.orderprocessingsystem.user.UserRole;
@@ -70,6 +71,9 @@ class AuthIntegrationTest {
 
     @MockBean
     private PlatformTransactionManager platformTransactionManager;
+
+    @MockBean
+    private OrderProcessingRepository orderProcessingRepository;
 
     @Test
     void customer1CanLogin() throws Exception {
