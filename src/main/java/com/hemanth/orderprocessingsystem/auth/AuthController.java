@@ -1,5 +1,7 @@
 package com.hemanth.orderprocessingsystem.auth;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,6 +31,14 @@ public class AuthController {
      * @param request login credentials
      * @return response containing the JWT and token type
      */
+    @Operation(
+            summary = "Login",
+            description = "Authenticates a customer or admin user and returns a JWT bearer token.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Login succeeded"),
+                    @ApiResponse(responseCode = "401", description = "Invalid credentials")
+            }
+    )
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
