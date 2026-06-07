@@ -1,6 +1,7 @@
 package com.hemanth.orderprocessingsystem.auth;
 
 import com.hemanth.orderprocessingsystem.history.OrderStatusHistoryRepository;
+import com.hemanth.orderprocessingsystem.idempotency.IdempotencyRepository;
 import com.hemanth.orderprocessingsystem.order.OrderRepository;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -62,6 +64,12 @@ class AuthIntegrationTest {
 
     @MockBean
     private OrderStatusHistoryRepository orderStatusHistoryRepository;
+
+    @MockBean
+    private IdempotencyRepository idempotencyRepository;
+
+    @MockBean
+    private PlatformTransactionManager platformTransactionManager;
 
     @Test
     void customer1CanLogin() throws Exception {

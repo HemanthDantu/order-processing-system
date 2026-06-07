@@ -1,13 +1,13 @@
 package com.hemanth.orderprocessingsystem.order;
 
 import com.hemanth.orderprocessingsystem.auth.JwtPrincipal;
+import com.hemanth.orderprocessingsystem.idempotency.IdempotencyService;
 import com.hemanth.orderprocessingsystem.order.dto.CreateOrderRequest;
 import com.hemanth.orderprocessingsystem.order.dto.OrderResponse;
 import com.hemanth.orderprocessingsystem.order.dto.OrderSummaryResponse;
 import com.hemanth.orderprocessingsystem.order.dto.PageResponse;
 import com.hemanth.orderprocessingsystem.order.dto.UpdateOrderStatusRequest;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -29,20 +30,23 @@ import java.util.UUID;
 public class OrderController {
 
     private final OrderService orderService;
+    private final IdempotencyService idempotencyService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, IdempotencyService idempotencyService) {
         this.orderService = orderService;
+        this.idempotencyService = idempotencyService;
     }
 
     /**
-     * Creates a new order for the authenticated user.
+     * Creates a new order once per authenticated user and Idempotency-Key.
      */
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(
+    public ResponseEntity<String> createOrder(
             @AuthenticationPrincipal JwtPrincipal principal,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody CreateOrderRequest request
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.createOrder(request, principal));
+        return idempotencyService.createOrder(request, principal, idempotencyKey);
     }
 
     /**

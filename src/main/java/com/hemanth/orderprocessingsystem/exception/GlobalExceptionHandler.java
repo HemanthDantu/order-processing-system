@@ -1,6 +1,7 @@
 package com.hemanth.orderprocessingsystem.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -77,6 +78,31 @@ public class GlobalExceptionHandler {
                 request.getRequestURI(),
                 List.of()
         );
+    }
+
+    /**
+     * Returns a 409 response when an idempotency key cannot be reused safely.
+     */
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleIdempotencyConflict(
+            IdempotencyConflictException exception,
+            HttpServletRequest request
+    ) {
+        ResponseEntity<ApiErrorResponse> response = buildResponse(
+                HttpStatus.CONFLICT,
+                exception.getMessage(),
+                request.getRequestURI(),
+                List.of()
+        );
+
+        if (exception.getRetryAfterSeconds() == null) {
+            return response;
+        }
+
+        return ResponseEntity
+                .status(response.getStatusCode())
+                .header(HttpHeaders.RETRY_AFTER, exception.getRetryAfterSeconds().toString())
+                .body(response.getBody());
     }
 
     private ResponseEntity<ApiErrorResponse> buildResponse(
