@@ -111,6 +111,8 @@ class IdempotencyServiceTest {
         assertThat(firstResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(replayedResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(replayedResponse.getBody()).isEqualTo(firstResponse.getBody());
+        assertThat(firstResponse.getHeaders().getLocation()).hasToString("/api/v1/orders/" + ORDER_ID);
+        assertThat(replayedResponse.getHeaders().getLocation()).hasToString("/api/v1/orders/" + ORDER_ID);
 
         JsonNode replayedJson = objectMapper.readTree(replayedResponse.getBody());
         assertThat(replayedJson.get("id").asText()).isEqualTo(ORDER_ID.toString());

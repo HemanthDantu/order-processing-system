@@ -3,6 +3,7 @@ package com.hemanth.orderprocessingsystem.auth;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRole;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -75,11 +76,15 @@ public class JwtService {
      * Convenience validation method used when only success or failure matters.
      *
      * @param token raw JWT string
-     * @return {@code true} if parsing succeeds
+     * @return {@code true} if parsing succeeds, otherwise {@code false}
      */
     public boolean isTokenValid(String token) {
-        parseClaims(token);
-        return true;
+        try {
+            parseClaims(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     /**

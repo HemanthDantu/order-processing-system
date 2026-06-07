@@ -191,6 +191,8 @@ curl -s -X POST http://localhost:8080/api/v1/orders \
 
 The authenticated user becomes the order customer. The request body does not accept `customerId`.
 
+Successful creation returns `201 Created`, the order response body, and a `Location` header pointing to `/api/v1/orders/{orderId}`.
+
 Save the returned order id. Use this order for retrieval, listing, and status-update examples:
 
 ```bash
@@ -212,11 +214,21 @@ curl -s http://localhost:8080/api/v1/orders/$ORDER_ID \
 
 `GET /api/v1/orders?page=0&size=20&status=PENDING`
 
-Admin-only endpoint. `status` is optional.
+Authenticated endpoint. `status` is optional.
+
+- Admins see all orders.
+- Customers see only their own orders.
 
 ```bash
 curl -s 'http://localhost:8080/api/v1/orders?page=0&size=20&status=PENDING' \
   -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+Customer-scoped listing:
+
+```bash
+curl -s 'http://localhost:8080/api/v1/orders?page=0&size=20' \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN"
 ```
 
 Page size is capped at `100`.
@@ -371,7 +383,7 @@ order:
 
 Behavior:
 
-- Runs every `300000` milliseconds by default.
+- Uses a fixed-delay schedule with a `300000` millisecond delay after each run completes.
 - Processes up to `500` orders per run by default.
 - Selects oldest `PENDING` orders first.
 - Uses PostgreSQL `FOR UPDATE SKIP LOCKED` to avoid blocking competing workers.
@@ -441,6 +453,8 @@ FOR UPDATE SKIP LOCKED
 
 This allows multiple scheduler instances to claim different pending orders without waiting on each other.
 
+The application uses fixed-delay scheduling rather than fixed-rate scheduling so a slow run does not queue another run immediately behind it in the same application instance. In a horizontally scaled deployment, each instance still wakes up independently; `FOR UPDATE SKIP LOCKED` prevents double-processing, while ShedLock or a similar leader-election mechanism would reduce duplicate wakeups in production.
+
 ### Idempotency Response Persistence Trade-off
 
 The idempotency record is inserted as `IN_PROGRESS` before order creation. After the order transaction succeeds, the serialized response is stored and the idempotency record is marked `COMPLETED`.
@@ -453,6 +467,7 @@ This makes concurrent duplicates safe, but there is a small failure window if th
 - Controllers are thin and delegate business logic to services.
 - DTOs are returned from controllers; JPA entities are not exposed directly.
 - Order transition rules are centralized in one validator.
+- `GET /api/v1/orders` is shared by admins and customers: admins see all orders, customers get a scoped "my orders" result.
 - Order creation uses idempotency only where duplicate creation is most dangerous.
 - Scheduler uses JDBC/native SQL for PostgreSQL-specific locking semantics.
 - The Spring Boot app is not containerized yet because the assignment phase asked for PostgreSQL Docker Compose only.
@@ -467,6 +482,8 @@ Run all tests:
 ./mvnw test
 ```
 
+The test suite includes a Testcontainers PostgreSQL integration test, so Docker must be running for the full test suite and GitHub Actions CI.
+
 Current coverage includes:
 
 - authentication flow
@@ -480,6 +497,7 @@ Current coverage includes:
 - scheduler batch behavior
 - admin manual trigger authorization
 - centralized error JSON
+- PostgreSQL Flyway/JPA validation, seed data, check constraints, and idempotency unique constraint behavior through Testcontainers
 
 ## Deferred Improvements
 
@@ -493,6 +511,5 @@ These are intentionally left out or scoped for future production hardening:
 - Payment integration
 - Inventory integration
 - Distributed tracing
-- Automated PostgreSQL integration tests with Testcontainers
 - Outbox/recovery flow for idempotency completion gaps
 - More detailed OpenAPI schema examples

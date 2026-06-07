@@ -25,6 +25,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -98,14 +99,14 @@ public class IdempotencyService {
         IdempotencyAttempt attempt = beginAttempt(user, idempotencyKey.trim(), requestHash);
 
         if (attempt.replayResponse()) {
-            return jsonResponse(attempt.statusCode(), attempt.responseBody());
+            return jsonResponse(attempt.statusCode(), attempt.responseBody(), attempt.resourceId());
         }
 
         try {
             OrderResponse orderResponse = orderService.createOrder(request, principal);
             String responseBody = responseWriter.writeValueAsString(orderResponse);
             completeAttempt(attempt.recordId(), responseBody, HttpStatus.CREATED.value(), orderResponse.id());
-            return jsonResponse(HttpStatus.CREATED.value(), responseBody);
+            return jsonResponse(HttpStatus.CREATED.value(), responseBody, orderResponse.id());
         } catch (JsonProcessingException exception) {
             markFailed(attempt.recordId());
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to serialize idempotent order response", exception);
@@ -141,7 +142,8 @@ public class IdempotencyService {
             );
             case COMPLETED -> IdempotencyAttempt.replay(
                     existing.getStatusCode(),
-                    existing.getResponseBody()
+                    existing.getResponseBody(),
+                    existing.getResourceId()
             );
             case FAILED -> throw new IdempotencyConflictException(
                     "Previous order creation request with this Idempotency-Key failed; retry with a new key"
@@ -188,28 +190,34 @@ public class IdempotencyService {
         }
     }
 
-    private ResponseEntity<String> jsonResponse(int statusCode, String responseBody) {
-        return ResponseEntity
+    private ResponseEntity<String> jsonResponse(int statusCode, String responseBody, UUID resourceId) {
+        ResponseEntity.BodyBuilder responseBuilder = ResponseEntity
                 .status(statusCode)
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .body(responseBody);
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+
+        if (resourceId != null && statusCode == HttpStatus.CREATED.value()) {
+            responseBuilder.location(URI.create("/api/v1/orders/" + resourceId));
+        }
+
+        return responseBuilder.body(responseBody);
     }
 
     private record IdempotencyAttempt(
             UUID recordId,
             boolean replayResponse,
             Integer statusCode,
-            String responseBody
+            String responseBody,
+            UUID resourceId
     ) {
         static IdempotencyAttempt started(UUID recordId) {
-            return new IdempotencyAttempt(recordId, false, null, null);
+            return new IdempotencyAttempt(recordId, false, null, null, null);
         }
 
-        static IdempotencyAttempt replay(Integer statusCode, String responseBody) {
+        static IdempotencyAttempt replay(Integer statusCode, String responseBody, UUID resourceId) {
             if (statusCode == null || responseBody == null) {
                 throw new IdempotencyConflictException("Stored idempotent response is incomplete; retry with a new key");
             }
-            return new IdempotencyAttempt(null, true, statusCode, responseBody);
+            return new IdempotencyAttempt(null, true, statusCode, responseBody, resourceId);
         }
     }
 

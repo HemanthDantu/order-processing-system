@@ -16,9 +16,9 @@ public class OrderProcessingScheduler {
     }
 
     /**
-     * Runs at the configured fixed rate.
+     * Runs after the configured delay from the previous run completion.
      */
-    @Scheduled(fixedRateString = "${order.processing.scheduler.fixed-rate-ms}")
+    @Scheduled(fixedDelayString = "${order.processing.scheduler.fixed-rate-ms}")
     public void processPendingOrders() {
         jobService.processPendingOrders();
     }

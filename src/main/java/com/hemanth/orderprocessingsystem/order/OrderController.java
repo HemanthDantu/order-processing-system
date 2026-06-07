@@ -89,16 +89,15 @@ public class OrderController {
     }
 
     /**
-     * Lists orders for admins using bounded pagination and optional status filtering.
+     * Lists orders using bounded pagination and optional status filtering.
      */
     @Operation(
             summary = "List orders",
-            description = "Lists orders with optional status filtering. Admin-only endpoint.",
+            description = "Lists orders with optional status filtering. Admins see all orders; customers see only their own orders.",
             security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH),
             responses = {
                     @ApiResponse(responseCode = "200", description = "Orders returned"),
-                    @ApiResponse(responseCode = "401", description = "Authentication required"),
-                    @ApiResponse(responseCode = "403", description = "Admin role required")
+                    @ApiResponse(responseCode = "401", description = "Authentication required")
             }
     )
     @GetMapping

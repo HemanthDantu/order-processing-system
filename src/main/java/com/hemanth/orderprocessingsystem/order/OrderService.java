@@ -116,7 +116,11 @@ public class OrderService {
     }
 
     /**
-     * Lists orders for admins with optional status filtering and bounded pagination.
+     * Lists orders with optional status filtering and bounded pagination.
+     *
+     * <p>Admins see all orders. Customers see only their own orders, which keeps
+     * the same endpoint useful for customer self-service without exposing other
+     * customers' data.</p>
      */
     @Transactional(readOnly = true)
     public PageResponse<OrderSummaryResponse> listOrders(
@@ -125,14 +129,8 @@ public class OrderService {
             int size,
             JwtPrincipal principal
     ) {
-        if (principal.role() != UserRole.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admins can list orders");
-        }
-
         Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE));
-        Page<Order> orders = status == null
-                ? orderRepository.findAll(pageable)
-                : orderRepository.findByStatus(status, pageable);
+        Page<Order> orders = listOrdersForPrincipal(status, pageable, principal);
 
         return new PageResponse<>(
                 orders.getContent().stream().map(orderMapper::toSummaryResponse).toList(),
@@ -143,6 +141,18 @@ public class OrderService {
                 orders.isFirst(),
                 orders.isLast()
         );
+    }
+
+    private Page<Order> listOrdersForPrincipal(OrderStatus status, Pageable pageable, JwtPrincipal principal) {
+        if (principal.role() == UserRole.ADMIN) {
+            return status == null
+                    ? orderRepository.findAll(pageable)
+                    : orderRepository.findByStatus(status, pageable);
+        }
+
+        return status == null
+                ? orderRepository.findByCustomerId(principal.userId(), pageable)
+                : orderRepository.findByCustomerIdAndStatus(principal.userId(), status, pageable);
     }
 
     /**

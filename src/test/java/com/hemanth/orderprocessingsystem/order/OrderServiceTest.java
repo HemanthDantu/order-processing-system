@@ -133,13 +133,17 @@ class OrderServiceTest {
     }
 
     @Test
-    void listOrdersRejectsCustomer() {
+    void listOrdersReturnsOnlyCustomerOwnedOrders() {
         OrderService service = newOrderService();
+        Order order = sampleOrder(customerUser());
+        when(orderRepository.findByCustomerId(CUSTOMER_ID, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(order), PageRequest.of(0, 20), 1));
 
-        assertThatThrownBy(() -> service.listOrders(null, 0, 20, customerPrincipal()))
-                .isInstanceOf(ResponseStatusException.class)
-                .extracting(error -> ((ResponseStatusException) error).getStatusCode())
-                .isEqualTo(HttpStatus.FORBIDDEN);
+        PageResponse<OrderSummaryResponse> response = service.listOrders(null, 0, 20, customerPrincipal());
+
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.content().get(0).customerId()).isEqualTo(CUSTOMER_ID);
+        verify(orderRepository).findByCustomerId(CUSTOMER_ID, PageRequest.of(0, 20));
     }
 
     @Test
@@ -171,6 +175,19 @@ class OrderServiceTest {
         assertThat(response.content()).hasSize(1);
         assertThat(response.size()).isEqualTo(100);
         verify(orderRepository).findByStatus(OrderStatus.PENDING, PageRequest.of(0, 100));
+    }
+
+    @Test
+    void listOrdersSupportsCustomerStatusFilter() {
+        OrderService service = newOrderService();
+        Order order = sampleOrder(customerUser());
+        when(orderRepository.findByCustomerIdAndStatus(eq(CUSTOMER_ID), eq(OrderStatus.PENDING), eq(PageRequest.of(0, 20))))
+                .thenReturn(new PageImpl<>(List.of(order), PageRequest.of(0, 20), 1));
+
+        PageResponse<OrderSummaryResponse> response = service.listOrders(OrderStatus.PENDING, 0, 20, customerPrincipal());
+
+        assertThat(response.content()).hasSize(1);
+        verify(orderRepository).findByCustomerIdAndStatus(CUSTOMER_ID, OrderStatus.PENDING, PageRequest.of(0, 20));
     }
 
     @Test
