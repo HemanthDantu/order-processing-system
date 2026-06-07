@@ -1,7 +1,11 @@
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   application:
     name: order-processing-system
   datasource:
+    # Host port intentionally stays on 5433 to avoid conflicts with local PostgreSQL installs.
     url: jdbc:postgresql://localhost:5433/orders_db
     username: orders_user
     password: orders_password
@@ -12,3 +16,7 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+app:
+  jwt:
+    secret: ${JWT_SECRET:test-secret-for-order-processing-application}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}

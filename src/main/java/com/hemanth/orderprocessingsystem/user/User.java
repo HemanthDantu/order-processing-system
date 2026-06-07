@@ -12,6 +12,9 @@ import java.util.UUID;
 
 /**
  * Domain entity representing an application user.
+ *
+ * <p>This entity maps directly to the Flyway-created {@code users} table so
+ * schema validation can catch drift early when the app boots.</p>
  */
 @Entity
 @Table(name = "users")
@@ -38,9 +41,15 @@ public class User {
     private Instant updatedAt;
 
     protected User() {
-        // JPA requires a no-args constructor.
+        // JPA requires a no-args constructor for entity hydration.
     }
 
+    /**
+     * Creates a fully populated user record.
+     *
+     * <p>The app currently seeds users through Flyway, but this constructor is
+     * useful for tests and future service-layer creation flows.</p>
+     */
     public User(UUID id, String username, String passwordHash, UserRole role, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.username = username;
