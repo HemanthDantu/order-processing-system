@@ -29,7 +29,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Web authorization tests for the manual order-processing trigger.
  */
 @WebMvcTest(AdminOrderProcessingController.class)
-@Import(com.hemanth.orderprocessingsystem.auth.SecurityConfig.class)
+@Import({
+        com.hemanth.orderprocessingsystem.auth.SecurityConfig.class,
+        com.hemanth.orderprocessingsystem.exception.ApiErrorResponseWriter.class
+})
 class AdminOrderProcessingControllerTest {
 
     @Autowired
@@ -74,7 +77,11 @@ class AdminOrderProcessingControllerTest {
     @WithMockUser(roles = "CUSTOMER")
     void customerCannotTriggerOrderProcessing() throws Exception {
         mockMvc.perform(post("/api/v1/admin/scheduler/order-processing/trigger"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status", is(403)))
+                .andExpect(jsonPath("$.error", is("Forbidden")))
+                .andExpect(jsonPath("$.message", is("Access denied")))
+                .andExpect(jsonPath("$.path", is("/api/v1/admin/scheduler/order-processing/trigger")));
 
         verify(jobService, never()).processPendingOrders();
     }

@@ -94,7 +94,21 @@ class AuthIntegrationTest {
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new LoginRequest("unknown", "password"))))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status", is(401)))
+                .andExpect(jsonPath("$.error", is("Unauthorized")))
+                .andExpect(jsonPath("$.message", is("Invalid username or password")))
+                .andExpect(jsonPath("$.path", is("/api/v1/auth/login")));
+    }
+
+    @Test
+    void missingBearerTokenReturnsConsistent401Json() throws Exception {
+        mockMvc.perform(get("/api/v1/secured-test"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status", is(401)))
+                .andExpect(jsonPath("$.error", is("Unauthorized")))
+                .andExpect(jsonPath("$.message", is("Authentication is required")))
+                .andExpect(jsonPath("$.path", is("/api/v1/secured-test")));
     }
 
     @Test

@@ -4,14 +4,19 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Converts common application exceptions into consistent JSON responses.
@@ -35,9 +40,8 @@ public class GlobalExceptionHandler {
 
         return buildResponse(
                 HttpStatus.BAD_REQUEST,
-                "Request validation failed",
-                request.getRequestURI(),
-                details
+                "Request validation failed: " + String.join("; ", details),
+                request.getRequestURI()
         );
     }
 
@@ -50,7 +54,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
-        return buildResponse(status, exception.getReason(), request.getRequestURI(), List.of());
+        return buildResponse(status, safeMessage(exception.getReason(), status), request.getRequestURI());
     }
 
     /**
@@ -61,7 +65,7 @@ public class GlobalExceptionHandler {
             InvalidOrderStateException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), request.getRequestURI(), List.of());
+        return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), request.getRequestURI());
     }
 
     /**
@@ -75,8 +79,7 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.CONFLICT,
                 "Order was updated by another request. Please retry with the latest state.",
-                request.getRequestURI(),
-                List.of()
+                request.getRequestURI()
         );
     }
 
@@ -91,8 +94,7 @@ public class GlobalExceptionHandler {
         ResponseEntity<ApiErrorResponse> response = buildResponse(
                 HttpStatus.CONFLICT,
                 exception.getMessage(),
-                request.getRequestURI(),
-                List.of()
+                request.getRequestURI()
         );
 
         if (exception.getRetryAfterSeconds() == null) {
@@ -105,20 +107,90 @@ public class GlobalExceptionHandler {
                 .body(response.getBody());
     }
 
+    /**
+     * Returns a 401 response for authentication failures.
+     */
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ApiErrorResponse> handleBadCredentials(
+            BadCredentialsException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, "Invalid username or password", request.getRequestURI());
+    }
+
+    /**
+     * Returns a 403 response when an authenticated user lacks permission.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccessDenied(
+            AccessDeniedException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(HttpStatus.FORBIDDEN, "Access denied", request.getRequestURI());
+    }
+
+    /**
+     * Returns a safe response for database constraint failures without leaking
+     * table names, constraint names, SQL, or stack traces.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
+            DataIntegrityViolationException exception,
+            HttpServletRequest request
+    ) {
+        HttpStatus status = isUniqueConstraintViolation(exception) ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+        String message = status == HttpStatus.CONFLICT
+                ? "A resource with the same unique value already exists"
+                : "Request violates a database constraint";
+        return buildResponse(status, message, request.getRequestURI());
+    }
+
+    /**
+     * Returns a generic 500 response for unhandled failures.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiErrorResponse> handleUnexpectedException(
+            Exception exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error", request.getRequestURI());
+    }
+
     private ResponseEntity<ApiErrorResponse> buildResponse(
             HttpStatus status,
             String message,
-            String path,
-            List<String> details
+            String path
     ) {
         ApiErrorResponse response = new ApiErrorResponse(
                 Instant.now(),
                 status.value(),
                 status.getReasonPhrase(),
                 message,
-                path,
-                details
+                path
         );
         return ResponseEntity.status(status).body(response);
+    }
+
+    private String safeMessage(String reason, HttpStatus status) {
+        if (reason == null || reason.isBlank()) {
+            return status.getReasonPhrase();
+        }
+        return reason;
+    }
+
+    private boolean isUniqueConstraintViolation(Throwable throwable) {
+        String message = throwable.getMessage();
+        if (message != null && message.toLowerCase(Locale.ROOT).contains("duplicate")) {
+            return true;
+        }
+
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLException sqlException && "23505".equals(sqlException.getSQLState())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

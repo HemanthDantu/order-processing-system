@@ -1,10 +1,12 @@
 package com.hemanth.orderprocessingsystem.auth;
 
+import com.hemanth.orderprocessingsystem.exception.ApiErrorResponseWriter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,9 +27,11 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final ApiErrorResponseWriter errorResponseWriter;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, ApiErrorResponseWriter errorResponseWriter) {
         this.jwtService = jwtService;
+        this.errorResponseWriter = errorResponseWriter;
     }
 
     @Override
@@ -54,7 +58,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } catch (RuntimeException ex) {
                 // Treat bad or expired tokens as unauthenticated requests.
                 SecurityContextHolder.clearContext();
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired JWT");
+                errorResponseWriter.write(request, response, HttpStatus.UNAUTHORIZED, "Invalid or expired JWT");
                 return;
             }
         }

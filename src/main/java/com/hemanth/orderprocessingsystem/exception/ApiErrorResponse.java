@@ -1,8 +1,6 @@
 package com.hemanth.orderprocessingsystem.exception;
 
 import java.time.Instant;
-import java.util.List;
-
 /**
  * Standard API error response body.
  *
@@ -11,14 +9,12 @@ import java.util.List;
  * @param error short HTTP error name
  * @param message readable error summary
  * @param path request path
- * @param details optional field-level validation messages
  */
 public record ApiErrorResponse(
         Instant timestamp,
         int status,
         String error,
         String message,
-        String path,
-        List<String> details
+        String path
 ) {
 }
