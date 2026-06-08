@@ -13,6 +13,13 @@ import java.util.List;
 @Component
 public class OrderMapper {
 
+    /**
+     * Builds the detailed order response used by create/get/update/cancel endpoints.
+     *
+     * <p>Call this from inside service transactions because the order's item and
+     * customer associations are intentionally lazy to avoid accidental eager query
+     * fan-out in list views.</p>
+     */
     public OrderResponse toResponse(Order order) {
         List<OrderItemResponse> items = order.getItems().stream()
                 .map(this::toItemResponse)
@@ -30,6 +37,9 @@ public class OrderMapper {
         );
     }
 
+    /**
+     * Builds the lightweight list response without exposing JPA entities.
+     */
     public OrderSummaryResponse toSummaryResponse(Order order) {
         return new OrderSummaryResponse(
                 order.getId(),

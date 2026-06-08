@@ -5,6 +5,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -25,6 +27,8 @@ import java.util.List;
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtService jwtService;
     private final ApiErrorResponseWriter errorResponseWriter;
@@ -58,6 +62,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } catch (RuntimeException ex) {
                 // Treat bad or expired tokens as unauthenticated requests.
                 SecurityContextHolder.clearContext();
+                log.warn("Rejected invalid bearer token path={} reason={}", request.getRequestURI(), ex.getClass().getSimpleName());
                 errorResponseWriter.write(request, response, HttpStatus.UNAUTHORIZED, "Invalid or expired JWT");
                 return;
             }

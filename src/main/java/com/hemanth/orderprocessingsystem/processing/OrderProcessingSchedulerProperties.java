@@ -5,18 +5,23 @@ import org.springframework.stereotype.Component;
 
 /**
  * Runtime configuration for the scheduled pending-order processor.
+ *
+ * <p>The property still uses the assignment's original {@code fixed-rate-ms}
+ * name. The scheduler interprets the value as a fixed delay so a long-running
+ * batch completes before the next delay period begins.</p>
  */
 @Component
 @ConfigurationProperties(prefix = "order.processing.scheduler")
 public class OrderProcessingSchedulerProperties {
 
     /**
-     * How often the scheduler should run, in milliseconds.
+     * Delay between the completion of one scheduler run and the start of the next.
      */
     private long fixedRateMs = 300_000;
 
     /**
-     * Maximum number of pending orders to claim in one run.
+     * Maximum number of pending orders to claim in one run. Batching keeps each
+     * transaction bounded even if the queue grows.
      */
     private int batchSize = 500;
 

@@ -12,6 +12,8 @@ import com.hemanth.orderprocessingsystem.order.dto.CreateOrderRequest;
 import com.hemanth.orderprocessingsystem.order.dto.OrderResponse;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -50,6 +52,7 @@ import java.util.UUID;
 @Service
 public class IdempotencyService {
 
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
     private static final int RETRY_AFTER_SECONDS = 5;
 
     private final IdempotencyRepository idempotencyRepository;
@@ -99,6 +102,12 @@ public class IdempotencyService {
         IdempotencyAttempt attempt = beginAttempt(user, idempotencyKey.trim(), requestHash);
 
         if (attempt.replayResponse()) {
+            log.info(
+                    "Replaying completed idempotent order creation userId={} idempotencyKey={} resourceId={}",
+                    user.getId(),
+                    idempotencyKey.trim(),
+                    attempt.resourceId()
+            );
             return jsonResponse(attempt.statusCode(), attempt.responseBody(), attempt.resourceId());
         }
 
@@ -106,12 +115,30 @@ public class IdempotencyService {
             OrderResponse orderResponse = orderService.createOrder(request, principal);
             String responseBody = responseWriter.writeValueAsString(orderResponse);
             completeAttempt(attempt.recordId(), responseBody, HttpStatus.CREATED.value(), orderResponse.id());
+            log.info(
+                    "Completed idempotent order creation userId={} idempotencyKey={} orderId={}",
+                    user.getId(),
+                    idempotencyKey.trim(),
+                    orderResponse.id()
+            );
             return jsonResponse(HttpStatus.CREATED.value(), responseBody, orderResponse.id());
         } catch (JsonProcessingException exception) {
             markFailed(attempt.recordId());
+            log.error(
+                    "Failed to serialize idempotent order response userId={} idempotencyRecordId={}",
+                    user.getId(),
+                    attempt.recordId(),
+                    exception
+            );
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to serialize idempotent order response", exception);
         } catch (RuntimeException exception) {
             markFailed(attempt.recordId());
+            log.warn(
+                    "Idempotent order creation failed userId={} idempotencyRecordId={} reason={}",
+                    user.getId(),
+                    attempt.recordId(),
+                    exception.getClass().getSimpleName()
+            );
             throw exception;
         }
     }
@@ -121,8 +148,10 @@ public class IdempotencyService {
 
         try {
             IdempotencyRecord inserted = requiresNewTransaction.execute(status -> idempotencyRepository.saveAndFlush(record));
+            log.debug("Started idempotency attempt userId={} idempotencyKey={} recordId={}", user.getId(), idempotencyKey, inserted.getId());
             return IdempotencyAttempt.started(inserted.getId());
         } catch (DataIntegrityViolationException exception) {
+            log.debug("Idempotency insert collided userId={} idempotencyKey={}", user.getId(), idempotencyKey);
             IdempotencyRecord existing = idempotencyRepository
                     .findByUserIdAndIdempotencyKey(user.getId(), idempotencyKey)
                     .orElseThrow(() -> new IdempotencyConflictException("Idempotency key is currently unavailable", RETRY_AFTER_SECONDS));
@@ -132,22 +161,42 @@ public class IdempotencyService {
 
     private IdempotencyAttempt handleExistingAttempt(IdempotencyRecord existing, String requestHash) {
         if (!existing.getRequestHash().equals(requestHash)) {
+            log.warn(
+                    "Idempotency key reused with different request idempotencyRecordId={} idempotencyKey={}",
+                    existing.getId(),
+                    existing.getIdempotencyKey()
+            );
             throw new IdempotencyConflictException("Idempotency key was already used with a different request");
         }
 
         return switch (existing.getStatus()) {
-            case IN_PROGRESS -> throw new IdempotencyConflictException(
-                    "An order creation request with this Idempotency-Key is still in progress",
-                    RETRY_AFTER_SECONDS
-            );
+            case IN_PROGRESS -> {
+                log.info(
+                        "Idempotency request still in progress idempotencyRecordId={} idempotencyKey={} retryAfterSeconds={}",
+                        existing.getId(),
+                        existing.getIdempotencyKey(),
+                        RETRY_AFTER_SECONDS
+                );
+                throw new IdempotencyConflictException(
+                        "An order creation request with this Idempotency-Key is still in progress",
+                        RETRY_AFTER_SECONDS
+                );
+            }
             case COMPLETED -> IdempotencyAttempt.replay(
                     existing.getStatusCode(),
                     existing.getResponseBody(),
                     existing.getResourceId()
             );
-            case FAILED -> throw new IdempotencyConflictException(
-                    "Previous order creation request with this Idempotency-Key failed; retry with a new key"
-            );
+            case FAILED -> {
+                log.warn(
+                        "Idempotency key points to failed attempt idempotencyRecordId={} idempotencyKey={}",
+                        existing.getId(),
+                        existing.getIdempotencyKey()
+                );
+                throw new IdempotencyConflictException(
+                        "Previous order creation request with this Idempotency-Key failed; retry with a new key"
+                );
+            }
         };
     }
 
@@ -168,6 +217,7 @@ public class IdempotencyService {
     }
 
     private String hashNormalizedOrderRequest(CreateOrderRequest request) {
+        // Normalize money scale before hashing so 10 and 10.00 are treated as the same business request.
         List<NormalizedOrderItem> normalizedItems = request.items()
                 .stream()
                 .map(item -> new NormalizedOrderItem(

@@ -2,6 +2,8 @@ package com.hemanth.orderprocessingsystem.auth;
 
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -36,13 +40,18 @@ public class AuthService {
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByUsername(request.username())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password"));
+                .orElseThrow(() -> {
+                    log.warn("Login failed for username={} reason=user_not_found", request.username());
+                    return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
+                });
 
-        // BCrypt comparison protects the stored password hash from being exposed.
+        // Never log or expose the submitted password; BCrypt compares it to the stored hash safely.
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            log.warn("Login failed for username={} reason=password_mismatch", request.username());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
 
+        log.info("Login succeeded for userId={} username={} role={}", user.getId(), user.getUsername(), user.getRole());
         return new LoginResponse(jwtService.generateToken(user), "Bearer");
     }
 }

@@ -1,6 +1,8 @@
 package com.hemanth.orderprocessingsystem.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,8 @@ import java.util.Locale;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     /**
      * Returns a 400 response for request validation failures.
      */
@@ -32,6 +36,7 @@ public class GlobalExceptionHandler {
             MethodArgumentNotValidException exception,
             HttpServletRequest request
     ) {
+        log.debug("Validation failed path={} errorCount={}", request.getRequestURI(), exception.getBindingResult().getErrorCount());
         List<String> details = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
@@ -54,6 +59,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
+        log.debug("ResponseStatusException handled path={} status={}", request.getRequestURI(), status.value());
         return buildResponse(status, safeMessage(exception.getReason(), status), request.getRequestURI());
     }
 
@@ -65,6 +71,7 @@ public class GlobalExceptionHandler {
             InvalidOrderStateException exception,
             HttpServletRequest request
     ) {
+        log.debug("Invalid order transition path={} message={}", request.getRequestURI(), exception.getMessage());
         return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), request.getRequestURI());
     }
 
@@ -76,6 +83,7 @@ public class GlobalExceptionHandler {
             ObjectOptimisticLockingFailureException exception,
             HttpServletRequest request
     ) {
+        log.warn("Optimistic locking conflict path={}", request.getRequestURI());
         return buildResponse(
                 HttpStatus.CONFLICT,
                 "Order was updated by another request. Please retry with the latest state.",
@@ -91,6 +99,11 @@ public class GlobalExceptionHandler {
             IdempotencyConflictException exception,
             HttpServletRequest request
     ) {
+        log.info(
+                "Idempotency conflict path={} retryAfterSeconds={}",
+                request.getRequestURI(),
+                exception.getRetryAfterSeconds()
+        );
         ResponseEntity<ApiErrorResponse> response = buildResponse(
                 HttpStatus.CONFLICT,
                 exception.getMessage(),
@@ -115,6 +128,7 @@ public class GlobalExceptionHandler {
             BadCredentialsException exception,
             HttpServletRequest request
     ) {
+        log.warn("Authentication failed path={}", request.getRequestURI());
         return buildResponse(HttpStatus.UNAUTHORIZED, "Invalid username or password", request.getRequestURI());
     }
 
@@ -126,6 +140,7 @@ public class GlobalExceptionHandler {
             AccessDeniedException exception,
             HttpServletRequest request
     ) {
+        log.warn("Access denied path={}", request.getRequestURI());
         return buildResponse(HttpStatus.FORBIDDEN, "Access denied", request.getRequestURI());
     }
 
@@ -139,6 +154,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         HttpStatus status = isUniqueConstraintViolation(exception) ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
+        log.warn("Database constraint violation path={} mappedStatus={}", request.getRequestURI(), status.value());
         String message = status == HttpStatus.CONFLICT
                 ? "A resource with the same unique value already exists"
                 : "Request violates a database constraint";
@@ -153,6 +169,7 @@ public class GlobalExceptionHandler {
             Exception exception,
             HttpServletRequest request
     ) {
+        log.error("Unexpected server error path={}", request.getRequestURI(), exception);
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error", request.getRequestURI());
     }
 

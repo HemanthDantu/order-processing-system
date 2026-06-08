@@ -12,6 +12,8 @@ import com.hemanth.orderprocessingsystem.order.dto.UpdateOrderStatusRequest;
 import com.hemanth.orderprocessingsystem.user.User;
 import com.hemanth.orderprocessingsystem.user.UserRepository;
 import com.hemanth.orderprocessingsystem.user.UserRole;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +32,7 @@ import java.util.UUID;
 @Service
 public class OrderService {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private static final int MAX_PAGE_SIZE = 100;
 
     private final OrderRepository orderRepository;
@@ -94,6 +97,14 @@ public class OrderService {
         order.setTotalAmount(MoneyUtil.normalize(totalAmount));
         Order savedOrder = orderRepository.save(order);
         historyService.recordOrderCreated(savedOrder, customer, ActorType.valueOf(principal.role().name()), now);
+        log.info(
+                "Order created orderId={} customerId={} itemCount={} totalAmount={} currency={}",
+                savedOrder.getId(),
+                customer.getId(),
+                savedOrder.getItems().size(),
+                savedOrder.getTotalAmount(),
+                savedOrder.getCurrency()
+        );
         return orderMapper.toResponse(savedOrder);
     }
 
@@ -131,6 +142,15 @@ public class OrderService {
     ) {
         Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE));
         Page<Order> orders = listOrdersForPrincipal(status, pageable, principal);
+        log.debug(
+                "Orders listed requesterId={} role={} statusFilter={} page={} size={} resultCount={}",
+                principal.userId(),
+                principal.role(),
+                status,
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                orders.getNumberOfElements()
+        );
 
         return new PageResponse<>(
                 orders.getContent().stream().map(orderMapper::toSummaryResponse).toList(),
@@ -189,6 +209,13 @@ public class OrderService {
                 now,
                 request.reason()
         );
+        log.info(
+                "Order status updated orderId={} adminId={} fromStatus={} toStatus={}",
+                savedOrder.getId(),
+                admin.getId(),
+                previousStatus,
+                request.status()
+        );
 
         return orderMapper.toResponse(savedOrder);
     }
@@ -214,6 +241,7 @@ public class OrderService {
 
         OrderStatus previousStatus = order.getStatus();
         if (previousStatus == OrderStatus.CANCELLED) {
+            log.info("Cancellation requested for already-cancelled order orderId={} requesterId={}", order.getId(), principal.userId());
             return orderMapper.toResponse(order);
         }
 
@@ -232,6 +260,12 @@ public class OrderService {
                 ActorType.valueOf(principal.role().name()),
                 now,
                 "Order cancelled"
+        );
+        log.info(
+                "Order cancelled orderId={} requesterId={} actorType={}",
+                savedOrder.getId(),
+                actor.getId(),
+                principal.role()
         );
 
         return orderMapper.toResponse(savedOrder);
