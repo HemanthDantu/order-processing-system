@@ -111,6 +111,16 @@ Swagger is configured with a JWT bearer security scheme. After logging in, copy 
 
 Swagger UI adds the `Bearer` prefix for you.
 
+## Postman Collection
+
+A ready-to-import Postman collection is available at:
+
+```text
+postman/Order_Processing_System.postman_collection.json
+```
+
+Run `Customer Login` and `Admin Login` first. Those requests save JWTs into collection variables. The create-order requests also save order IDs and idempotency keys so the get, retry, status-update, cancel, and scheduler examples can be run without manually copying every value.
+
 ## Seeded Users
 
 Flyway seeds two demo users. Both use the password:
